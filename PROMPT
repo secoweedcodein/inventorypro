@@ -1,0 +1,333 @@
+# PROMPT MAESTRO - InventoryPro
+## Sistema SaaS de Gestión de Inventario
+
+---
+
+## 🎯 OBJETIVO DEL PROYECTO
+
+Desarrollar un sistema profesional multi-tenant (multi-empresa) de gestión de inventario llamado **InventoryPro**, comercializable como SaaS, con arquitectura preparada para evolucionar a móvil.
+
+---
+
+## 🛠️ STACK TECNOLÓGICO
+
+### Frontend
+- **Next.js 16** (App Router, Turbopack)
+- **React 19**
+- **TypeScript**
+- **Tailwind CSS 4**
+- **shadcn/ui** (preset Nova - Lucide / Geist)
+- **Radix UI**
+- **Lucide Icons**
+- **Recharts** (gráficos)
+
+### Backend
+- **Supabase**
+- **PostgreSQL**
+- **Supabase Auth**
+- **Row Level Security (RLS)**
+- **Supabase Storage**
+
+### Arquitectura
+- SaaS Multi-Tenant (aislamiento por `company_id`)
+- Server Actions de Next.js para mutaciones
+- Server Components para renderizado
+- Middleware para protección de rutas
+
+---
+
+## 📂 ESTRUCTURA DE ARCHIVOS CREADA
+inventorypro/
+├── app/
+│ ├── (auth)/
+│ │ ├── login/page.tsx
+│ │ └── register/page.tsx
+│ ├── actions/
+│ │ ├── auth.ts
+│ │ ├── categories.ts
+│ │ └── products.ts
+│ ├── dashboard/page.tsx
+│ ├── categories/
+│ │ ├── page.tsx
+│ │ ├── new/page.tsx
+│ │ └── [id]/edit/page.tsx
+│ └── products/
+│ ├── page.tsx
+│ ├── new/page.tsx
+│ └── [id]/edit/page.tsx
+├── components/
+│ ├── layout/
+│ │ ├── AppLayout.tsx
+│ │ ├── Sidebar.tsx
+│ │ ├── Header.tsx
+│ │ ├── Logo.tsx
+│ │ └── UserMenu.tsx
+│ ├── dashboard/
+│ │ ├── StatCard.tsx
+│ │ ├── SalesChart.tsx
+│ │ ├── TopProducts.tsx
+│ │ └── RecentMovements.tsx
+│ ├── categories/
+│ │ ├── CategoryForm.tsx
+│ │ └── DeleteCategoryButton.tsx
+│ └── products/
+│ ├── ProductForm.tsx
+│ ├── ImageUpload.tsx
+│ └── DeleteProductButton.tsx
+├── lib/supabase/
+│ ├── client.ts
+│ ├── server.ts
+│ └── middleware.ts
+└── middleware.ts (raíz) 
+
+---
+
+## 🗄️ BASE DE DATOS SUPABASE
+
+### Estructura REAL de tablas (con nombres exactos de columnas)
+
+#### `companies`
+- `id` (UUID, PK)
+- `name`
+- `created_at`, `updated_at`
+
+#### `profiles`
+- `id` (UUID, PK) — mismo que auth.users.id
+- `auth_user_id` (UUID)
+- `company_id` (UUID, FK → companies)
+- `first_name` (NOT NULL)
+- `last_name` (NOT NULL)
+- `email`
+- `phone`
+- `avatar_url`
+- `active` (boolean)
+- `created_at`, `updated_at`
+
+#### `roles`
+- `id` (UUID, PK)
+- `name` (OWNER, ADMIN, EMPLOYEE)
+
+#### `user_roles`
+- `id` (UUID, PK)
+- `profile_id` (UUID, FK → profiles) — **OJO: no es `user_id`**
+- `role_id` (UUID, FK → roles)
+
+#### `categories`
+- `id`, `name`, `description`, `company_id`, `created_at`, `updated_at`
+
+#### `brands`
+- `id`, `name`, `company_id`, `created_at`, `updated_at`
+
+#### `suppliers`
+- `id`, `name`, `company_id`, `created_at`, `updated_at`
+
+#### `products` (NOMBRES EXACTOS DE COLUMNAS)
+- `id` (UUID, PK)
+- `brand_id` (UUID, FK → brands)
+- `supplier_id` (UUID, FK → suppliers)
+- `sku`
+- `barcode`
+- `name`
+- `description`
+- `cost` (NUMERIC) — **NO es `price_cost` ni `cost_price`**
+- `price` (NUMERIC) — **NO es `price_sale` ni `sale_price`**
+- `stock` (INTEGER)
+- `min_stock` (INTEGER) — **NO es `stock_min`**
+- `image_url`
+- `active` (boolean)
+- `company_id` (UUID, FK → companies)
+- `created_at`, `updated_at`
+- **NO tiene** `category_id` ni `created_by`
+
+#### `warehouses`
+- `id`, `name`, `company_id`, `created_at`, `updated_at`
+
+#### `inventory`
+- `id`, `product_id`, `warehouse_id`, `quantity`, `company_id`, `created_at`, `updated_at`
+
+#### `inventory_movement_types`
+- COMPRA, VENTA, AJUSTE_ENTRADA, AJUSTE_SALIDA, DEVOLUCION, MERMA
+
+#### `inventory_movements`
+- `id`, `product_id`, `warehouse_id`, `type`, `quantity`, `previous_stock`, `new_stock`, `user_id`, `created_at`
+
+### Funciones y Triggers
+
+#### `handle_new_user()` — Trigger automático al registrarse
+```sql
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER AS $$
+DECLARE
+  new_company_id UUID;
+  owner_role_id UUID;
+  user_first_name TEXT;
+  user_last_name TEXT;
+  user_company_name TEXT;
+BEGIN
+  user_first_name := COALESCE(NEW.raw_user_meta_data->>'first_name', split_part(NEW.email, '@', 1));
+  user_last_name := COALESCE(NEW.raw_user_meta_data->>'last_name', 'User');
+  user_company_name := COALESCE(NEW.raw_user_meta_data->>'company_name', 'Mi Empresa');
+
+  INSERT INTO public.companies (name)
+  VALUES (user_company_name)
+  RETURNING id INTO new_company_id;
+
+  INSERT INTO public.profiles (id, company_id, email, first_name, last_name, active)
+  VALUES (NEW.id, new_company_id, NEW.email, user_first_name, user_last_name, true);
+
+  SELECT id INTO owner_role_id FROM public.roles WHERE name = 'OWNER' LIMIT 1;
+
+  IF owner_role_id IS NOT NULL THEN
+    INSERT INTO public.user_roles (profile_id, role_id)
+    VALUES (NEW.id, owner_role_id);
+  END IF;
+
+  RETURN NEW;
+EXCEPTION WHEN OTHERS THEN
+  RAISE WARNING 'Error en trigger handle_new_user: %', SQLERRM;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+  process_inventory_movement() — Actualiza stock automáticamente
+Se ejecuta al insertar en inventory_movements.
+Configuración Supabase Auth
+Confirm email: DESACTIVADO
+Enable Signup: ACTIVADO
+Site URL: http://localhost:3000
+Redirect URLs: http://localhost:3000/**
+Storage Bucket
+Nombre: product-images (público)
+Estructura: {company_id}/{timestamp}.{ext}
+✅ FASES COMPLETADAS
+FASE 1: Sistema de usuarios ✅
+Registro con creación automática de empresa, perfil y rol OWNER
+Login con signInWithPassword
+Logout
+Middleware de protección de rutas
+Redirección automática según estado de autenticación
+UserMenu con dropdown en el header
+FASE 2: Dashboard profesional ✅
+4 tarjetas estadísticas (productos totales, stock bajo, valor inventario, ventas hoy)
+Gráfico de ventas últimos 7 días (Recharts)
+Productos más vendidos
+Movimientos recientes
+Bienvenida personalizada con first_name + last_name
+FASE 3: CRUD Categorías ✅
+Listado con tabla
+Crear (Server Action + Form)
+Editar (con params como Promise en Next.js 16)
+Eliminar (con confirmación)
+Patrón useActionState(prevState, formData)
+FASE 4: CRUD Productos ✅
+Listado con imagen, SKU, marca, proveedor, precios, stock con badge de alerta
+Crear con:
+Subida de imagen a Supabase Storage
+Generación automática de SKU (PRD-XXXX)
+Generación automática de código de barras (13 dígitos)
+Selección de marca y proveedor
+Stock y stock mínimo
+Editar
+Eliminar
+Creación automática de registro en inventory al crear producto
+🔜 FASES PENDIENTES
+FASE 5: Inventario
+Vista de stock por producto/almacén
+Registrar entrada (compra, ajuste entrada, devolución)
+Registrar salida (venta, ajuste salida, merma)
+Historial de movimientos
+Kardex (reporte detallado por producto)
+FASE 6: Proveedores
+CRUD completo (listado, crear, editar, eliminar)
+Búsqueda y filtros
+FASE 7: Compras
+Orden de compra
+Entrada automática al inventario vía inventory_movements
+Actualización de stock del producto
+FASE 8: Ventas
+POS (punto de venta)
+Salida automática del inventario
+Carrito de compras
+Generación de ticket/factura
+FASE 9: Reportes
+Ventas por período
+Productos más vendidos
+Valor de inventario
+Exportación a PDF/Excel
+FASE 10: Mejoras SaaS
+Planes de suscripción
+Configuración de empresa
+Auditoría (logs de acciones)
+Notificaciones
+Gestión de usuarios por empresa
+🔑 PATRONES Y DECISIONES TÉCNICAS CLAVE
+1. Server Actions con useActionState
+Todas las mutaciones usan este patrón:
+
+export async function createX(prevState: any, formData: FormData) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  // ... validaciones y lógica
+  revalidatePath('/ruta')
+  redirect('/ruta')
+}
+2. Obtener company_id del usuario
+Función helper reutilizable:
+async function getUserCompanyId() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'No autorizado', companyId: null }
+  const { data: profiles } = await supabase
+    .from('profiles')
+    .select('company_id')
+    .eq('id', user.id)
+    .limit(1)
+  if (!profiles || profiles.length === 0) {
+    return { error: 'Perfil no encontrado', companyId: null }
+  }
+  return { error: null, companyId: profiles[0].company_id }
+} Next.js 16 — params es Promise
+En rutas dinámicas:
+export default async function EditPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  // ...
+}
+4. Multi-Tenancy
+Todas las queries filtran por company_id del usuario autenticado.
+5. RLS (Row Level Security)
+Cada tabla tiene políticas que filtran por company_id obtenido de profiles donde id = auth.uid().
+⚠️ ERRORES COMUNES Y SOLUCIONES
+Error
+Causa
+Solución
+Email signups are disabled
+Config de Supabase
+Authentication > Providers > Email > Enable Signup ON
+must be owner of table users
+Intentar modificar auth.users
+No tocar esa tabla, usar triggers
+Cannot coerce the result to a single JSON object
+Filas duplicadas en profiles
+Limpiar duplicados con DELETE
+null value in column "first_name"
+Trigger usa full_name
+Usar first_name y last_name
+column "user_id" does not exist en user_roles
+La columna es profile_id
+Usar profile_id
+Could not find the 'X' column
+Nombre incorrecto de columna
+Verificar con information_schema.columns
+formData.get is not a function
+Server Action sin prevState
+Agregar prevState: any como primer parámetro
+404 en rutas dinámicas
+params no es await
+Usar params: Promise<{...}> y await params
+Módulo no encontrado (shadcn)
+Componente no instalado
+npx shadcn@latest add <componente>
