@@ -17,6 +17,11 @@ export default async function UsersPage() {
     .eq('id', user.id)
     .single()
 
+  // ✅ SOLUCIÓN: Verificar que el perfil exista antes de usarlo
+  if (!profile) {
+    redirect('/login')
+  }
+
   const { data: users } = await supabase
     .from('profiles')
     .select(`

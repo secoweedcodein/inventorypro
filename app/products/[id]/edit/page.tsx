@@ -3,9 +3,16 @@ import { redirect, notFound } from 'next/navigation'
 import { updateProduct } from '@/app/actions/products'
 import { ProductForm } from '@/components/products/ProductForm'
 
-export default async function EditProductPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params
+// Tipado seguro para Next.js 15+
+type PageProps = {
+  params: Promise<{ id: string }>
+}
 
+export default async function EditProductPage(props: PageProps) {
+  // 1. Hacemos el await de props.params aquí dentro
+  const params = await props.params
+  const id = params.id
+  
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
