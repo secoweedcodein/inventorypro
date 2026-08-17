@@ -4,6 +4,7 @@
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 
 
 export default function LoginPage(){
@@ -41,7 +42,7 @@ return;
 }
 
 
-router.push("/dashboard");
+router.push("/");
 
 
 }
@@ -100,6 +101,13 @@ className="w-full rounded bg-blue-600 p-3 text-white"
 Ingresar
 
 </button>
+
+<p className="mt-4 text-center text-sm text-slate-600">
+¿Aún no tienes cuenta?{' '}
+<Link href="/register" className="font-medium text-blue-600 hover:underline">
+Crear una cuenta
+</Link>
+</p>
 
 
 {

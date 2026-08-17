@@ -42,7 +42,7 @@ export async function signUp(formData: FormData) {
   }
 
   console.log('Usuario creado exitosamente:', data.user.id)
-  redirect('/dashboard')
+  redirect('/')
 }
 
 export async function signIn(formData: FormData) {
@@ -56,7 +56,7 @@ export async function signIn(formData: FormData) {
     return { error: error.message }
   }
 
-  redirect('/dashboard')
+  redirect('/')
 }
 
 export async function signOut() {

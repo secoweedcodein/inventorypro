@@ -24,14 +24,14 @@ export async function updateSession(request: NextRequest) {
   // Redirigir a login si no hay usuario y la ruta es protegida
   if (!user && !request.nextUrl.pathname.startsWith('/login') && !request.nextUrl.pathname.startsWith('/register')) {
     const url = request.nextUrl.clone()
-    url.pathname = '/login'
+    url.pathname = '/register'
     return NextResponse.redirect(url)
   }
 
   // Redirigir a dashboard si ya está logueado y va a auth
   if (user && (request.nextUrl.pathname.startsWith('/login') || request.nextUrl.pathname.startsWith('/register'))) {
     const url = request.nextUrl.clone()
-    url.pathname = '/dashboard'
+    url.pathname = '/'
     return NextResponse.redirect(url)
   }
 
